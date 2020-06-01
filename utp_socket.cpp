@@ -830,7 +830,7 @@ int UTPSocket::OnAck(const PacketHead *pHeader, int nPktLen)
 	if (m_deqNotAckedDataPacket.size() > 0) {
 		LOG_INFO(logger, "{} not acked first pkt seq:{}", (void*)this, m_deqNotAckedDataPacket[0]->pkt_seq);
 	}
-
+  // 数据包中的ack序列比最后一次记录的Ack号要大，更新相关信息
 	if (CircleSeq<uint16_t>(pHeader->ack_pkt_seq) >= m_nRemoteAckedPktSeq) {
 		m_nRemoteRecvWnd = pHeader->recv_wnd;
 		m_nRemoteAckedPktSeq = pHeader->ack_pkt_seq;
@@ -842,9 +842,9 @@ int UTPSocket::OnAck(const PacketHead *pHeader, int nPktLen)
 
 	bool bNotifyWrite = false;
 	while (m_deqNotAckedDataPacket.size() > 0) {
-		std::shared_ptr<PacketCS> pcs = m_deqNotAckedDataPacket[0];
+		std::shared_ptr<PacketCS> pcs = m_deqNotAckedDataPacket[0]; //得到发送窗口中第一个包
 		int64_t nCurTime = m_ptrClocker->GetMicroSecond();
-		if (CircleSeq<uint16_t>(pcs->pkt_seq) <= m_nRemoteAckedPktSeq) {
+		if (CircleSeq<uint16_t>(pcs->pkt_seq) <= m_nRemoteAckedPktSeq) { //如果这个包的序列比ack的值小，就认为是收到了
 			if (pcs->ack_time == 0) {
 				pcs->ack_time = nCurTime;
 				int64_t rtt = pcs->ack_time - pcs->send_time;
@@ -855,6 +855,7 @@ int UTPSocket::OnAck(const PacketHead *pHeader, int nPktLen)
 				else {
 					m_ptrRoundTripMeter->OnPacketAcked();
 				}
+        // 流量控制此处无实际的动作
 				m_ptrCongestionController->OnPacketAcked(nCurTime, rtt);
 
 				LOG_INFO(logger, "{} ack: rtt: {}, timeout value: {}", (void*)this, rtt, m_ptrRoundTripMeter->GetTimeoutValue());
@@ -868,7 +869,7 @@ int UTPSocket::OnAck(const PacketHead *pHeader, int nPktLen)
 		}
 		else {
 			if (CircleSeq<uint16_t>(pcs->pkt_seq) == m_nRemoteAckedPktSeq + 1) {
-				pcs->wanted_times++;
+				pcs->wanted_times++; //说明是下一个包
 				if (pcs->wanted_times == 4 && pcs->resend_times == 0) {
 					LOG_INFO(logger, "{} {} packet was wanted 4 times, fast resend it", (void*)this, pcs->pkt_seq);
 
@@ -910,7 +911,7 @@ int UTPSocket::OnAck(const PacketHead *pHeader, int nPktLen)
 			if (m_deqNotAckedDataPacket.size() > 0) {
 				RTASSERT(CircleSeq<uint16_t>(m_deqNotAckedDataPacket[0]->pkt_seq) == CircleSeq<uint16_t>(pHeader->ack_pkt_seq) + 1);
 			}
-
+      // 处理SACK
 			for (size_t i = 1; i < m_deqNotAckedDataPacket.size(); ++i) {
 				std::shared_ptr<PacketCS> pcs = m_deqNotAckedDataPacket[i];
 				uint64_t nCurTime = m_ptrClocker->GetMicroSecond();
