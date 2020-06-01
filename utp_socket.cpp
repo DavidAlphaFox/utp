@@ -558,11 +558,12 @@ int UTPSocket::OnPacket(const char* buffer, int len, const char *from, int from_
 
 	if (from != NULL && from_len > 0)
 		m_strRemoteAddr.assign(from, from_len);
-
+  //收到数据包的时间 
 	m_nLastReceivedTime = m_ptrClocker->GetMicroSecond();
 
 	/////////////////////////////////////////////////////////////////////////////////////////
-	uint32_t nMyTimeLowPart = uint32_t(m_nLastReceivedTime & 0xFFFFFFFF);
+	// 计算时间差
+  uint32_t nMyTimeLowPart = uint32_t(m_nLastReceivedTime & 0xFFFFFFFF);
 	m_nTheirTimestampDiff = nMyTimeLowPart - header->timestamp;
 
 	uint64_t nCurMS = m_ptrClocker->GetMicroSecond() / 1000;
@@ -573,7 +574,7 @@ int UTPSocket::OnPacket(const char* buffer, int len, const char *from, int from_
 		m_nMyTimestampDiff = header->timestamp_difference;
 
 		m_MyDelayHistory.AddSample(m_nMyTimestampDiff, nCurMS);
-
+    //进行流量控制
 		m_ptrCongestionController->OnPacketTripTime(m_ptrClocker->GetMicroSecond(), m_MyDelayHistory.GetValue(), m_ptrRoundTripMeter->GetRTT(), m_nNotAckedDataBytes);
 		m_ptrRoundTripMeter->OnPacketAcked();
 
@@ -628,7 +629,7 @@ int UTPSocket::OnPacket(const char* buffer, int len, const char *from, int from_
 	return 0;
 }
 
-
+// 构建封包，进行发送
 int UTPSocket::DoSendData(char* buffer, int len, bool withack)
 {
 	HeaderToBigEndian((PacketHead*)buffer);
@@ -645,11 +646,11 @@ int UTPSocket::DoSendData(char* buffer, int len, bool withack)
 	}
 	return 0;
 }
-
+// 发送SYN包 
 int UTPSocket::SendSyn(bool ack)
 {
 	std::shared_ptr<PacketCS> pcs(new PacketCS());
-
+  
 	int nBuffSize = sizeof(PacketHead);
 	RTASSERT(pcs->buffer == NULL);
 
@@ -961,7 +962,7 @@ int UTPSocket::OnAck(const PacketHead *pHeader, int nPktLen)
 void UTPSocket::OnState(const PacketHead *pHeader, int nPktLen)
 {
 	LOG_DEBUG(logger, "{} on state {}", (void*)this, PacketDesc(pHeader));
-
+  //角色是Client，这时候收到了STATE
 	if (m_eState == RTSS_SYN_SENT) {
 		if (CircleSeq<uint16_t>(pHeader->ack_pkt_seq) == m_nLocalSendPktSeq - 1) {
 			m_nLocalExpectPktSeq = CircleSeq<uint16_t>(pHeader->pkt_seq);
@@ -1217,11 +1218,11 @@ bool UTPSocket::SaveReceivedData(std::shared_ptr<PacketCS> pkt, CircleSeq<uint16
 		return false;
 	}
 }
-
+// 数据包
 void UTPSocket::OnData(const PacketHead *pHeader, int nPktLen)
 {
 	LOG_DEBUG(logger, "{} received data {}", (void*)this, PacketDesc(pHeader));
-
+  //当前角色是Acceptor，并且接收到SYN
 	if (m_eState == RTSS_SYN_RECEIVED ) {
 		if (pHeader->ack_pkt_seq == (m_nLocalSendPktSeq - 1) && pHeader->pkt_seq == (uint16_t)m_nLocalExpectPktSeq) {
 			m_nRemoteRecvWnd = pHeader->recv_wnd;
@@ -1238,7 +1239,7 @@ void UTPSocket::OnData(const PacketHead *pHeader, int nPktLen)
         LOG_DEBUG(logger, "{} received data not in recv window", (void*)this);
 		return;
 	}
-
+  // 并没处在链接建立的状态中
 	if (m_eState != RTSS_ESTABLISHED)
 		return;
 
